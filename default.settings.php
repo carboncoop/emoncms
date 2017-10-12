@@ -68,7 +68,8 @@
         )
     );
     
-    $homedir = "/home/pi";
+    // For use with emoncms module that require installation in home directory
+    // $homedir = "/home/username";
 
     // Max number of allowed different inputs per user. For limiting garbage rf data
     $max_node_id_limit = 32;
@@ -164,4 +165,4 @@
     $allow_config_env_vars = false;
 
     // Dont change - developer updates this when the config format changes
-    $config_file_version = "9";
+    $config_file_version = "10";
