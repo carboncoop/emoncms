@@ -352,7 +352,7 @@ var processlist_ui =
           break;
 
         case 4: // TEXT
-          arg =  $("#text-input").val().replace(/:/g,'').replace(/,/g,''); // Remove : and , characters aas they would break the processlist
+          arg =  $("#text-input").val().replace(/:/g,'').replace(/,/g,''); // Remove : and , characters as they would break the processlist
           break;
 
         case 5: // SCHEDULEID
@@ -648,9 +648,10 @@ var processlist_ui =
     this.contexttype = contexttype;
     this.init_done = 4; // going to load 4 lists
 
-    // Processors Select List
+    // Processors Select List - Fetch processors
     $.ajax({ url: path+"process/list.json", dataType: 'json', async: true, success: function(result){
 
+    // Processors Select List - Add/remove engines to/from processors
       for (p in result)  // for each processor
       {
         result[p]['feedwrite']=false;
@@ -672,22 +673,28 @@ var processlist_ui =
       }
 
       processlist_ui.processlist = result;
+      
+      // Processors Select List - processgroups: array to hold the groups of processors
       var processgroups = [];
       for (z in processlist_ui.processlist) {
-        if (processlist_ui.contexttype == 1 && processlist_ui.processlist[z]['feedwrite'] == true) {
-          continue;  // in feed context and processor has a engine? dont show on virtual processlist selector
+        if (processlist_ui.contexttype == 1 && processlist_ui.processlist[z]['feedwrite'] == true) { 
+          continue;  // in feed context and processor has a engine? dont show on virtual processlist selector, if feed context we don't show the processors that log to feed
         }
         var group = processlist_ui.processlist[z][5];
         if (processlist_ui.contexttype == 0 && group=="Virtual") { 
-          continue;  // in input context and group name is virtual? dont show on input processlist selector
+          continue;  // in input context and group name is virtual? dont show on input processlist selector, in input context we don't show processors from Virtual group
         }
-        if (group!="Deleted") {
+        if (processlist_ui.contexttype == 2 && (group=='Event' || group=='Conditional - Event')) { 
+          continue;  // in task context skip processors in groups "Event" and "Conditional - Event". Those processors expect $options['sourceid'] to be a feedid or inputid and use it to fetchsome data from them. In task context, $options['sourceid'] is the task id so this processors are not applicable']
+        }
+        if (group!="Deleted") { // Don't show deleted processors
           if (!processgroups[group]) processgroups[group] = []
           processlist_ui.processlist[z]['id'] = z;
           processgroups[group].push(processlist_ui.processlist[z]);
         }
       }
 
+      // Processors Select List - prepare html
       var out = "";
       for (pg in processgroups) {
         out += "<optgroup " + (pg == "Hidden" ? "hidden " : "") + "label='"+pg+"'>";
