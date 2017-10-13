@@ -352,7 +352,7 @@ var processlist_ui =
           break;
 
         case 4: // TEXT
-          arg = $("#text-input").val();
+          arg =  $("#text-input").val().replace(/:/g,'').replace(/,/g,''); // Remove : and , characters aas they would break the processlist
           break;
 
         case 5: // SCHEDULEID
