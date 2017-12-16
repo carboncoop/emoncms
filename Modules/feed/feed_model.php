@@ -86,10 +86,11 @@ class Feed
     public function create($userid,$tag,$name,$datatype,$engine,$options_in)
     {
         $userid = (int) $userid;
-        $name = preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$name);
-        $tag = preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$tag);
+        if (preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$name)!=$name) return array('success'=>false, 'message'=>'invalid characters in feed name');
+        if (preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$tag)!=$tag) return array('success'=>false, 'message'=>'invalid characters in feed tag');
         $datatype = (int) $datatype;
         $engine = (int) $engine;
+        $public = false;
 
         // If feed of given name by the user already exists
         if ($this->exists_tag_name($userid,$tag,$name)) return array('success'=>false, 'message'=>'feed already exists');
@@ -97,9 +98,13 @@ class Feed
         // Histogram engine requires MYSQL
         if ($datatype==DataType::HISTOGRAM && $engine!=Engine::MYSQL) $engine = Engine::MYSQL;
 
-        $result = $this->mysqli->query("INSERT INTO feeds (userid,tag,name,datatype,public,engine) VALUES ('$userid','$tag','$name','$datatype',false,'$engine')");
+        $stmt = $this->mysqli->prepare("INSERT INTO feeds (userid,tag,name,datatype,public,engine) VALUES (?,?,?,?,?,?)");
+        $stmt->bind_param("issiii",$userid,$tag,$name,$datatype,$public,$engine);
+        $stmt->execute();
+        $stmt->close();
+        
         $feedid = $this->mysqli->insert_id;
-
+        
         if ($feedid>0)
         {
             // Add the feed to redis
@@ -178,7 +183,7 @@ class Feed
 
     public function exist($feedid)
     {
-        //$this->log->info("exist() feedid=$feedid");
+        $feedid = (int) $feedid;
         static $feed_exists_cache = array(); // Array to hold the cache
         if (isset($feed_exists_cache[$feedid])) {
             $feedexist = $feed_exists_cache[$feedid]; // Retrieve from static cache
@@ -193,7 +198,6 @@ class Feed
                     $feedexist = true;
                 }
             } else {
-                $feedid = intval($feedid);
                 $result = $this->mysqli->query("SELECT id FROM feeds WHERE id = '$feedid'");
                 if ($result->num_rows>0) $feedexist = true;
             }
@@ -207,25 +211,46 @@ class Feed
     {
         $userid = (int) $userid;
         $feedid = (int) $feedid;
-        $result = $this->mysqli->query("SELECT id FROM feeds WHERE userid = '$userid' AND id = '$feedid'");
-        if ($result->num_rows>0) { $row = $result->fetch_array(); return true; } else return false;
+        
+        $stmt = $this->mysqli->prepare("SELECT id FROM feeds WHERE userid=? AND id=?");
+        $stmt->bind_param("ii",$userid,$feedid);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $result = $stmt->fetch();
+        $stmt->close();
+        
+        if ($result && $id>0) return true; else return false;
     }
     
     public function get_id($userid,$name)
     {
-        $userid = intval($userid);
+        $userid = (int) $userid;
         $name = preg_replace('/[^\w\s-:]/','',$name);
-        $result = $this->mysqli->query("SELECT id FROM feeds WHERE userid = '$userid' AND name = '$name'");
-        if ($result->num_rows>0) { $row = $result->fetch_array(); return $row['id']; } else return false;
+        
+        $stmt = $this->mysqli->prepare("SELECT id FROM feeds WHERE userid=? AND name=?");
+        $stmt->bind_param("is",$userid,$name);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $result = $stmt->fetch();
+        $stmt->close();
+        
+        if ($result && $id>0) return $id; else return false;
     }
 
     public function exists_tag_name($userid,$tag,$name)
     {
-        $userid = intval($userid);
+        $userid = (int) $userid;
         $name = preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$name);
         $tag = preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$tag);
-        $result = $this->mysqli->query("SELECT id FROM feeds WHERE userid = '$userid' AND name = '$name' AND tag = '$tag'");
-        if ($result->num_rows>0) { $row = $result->fetch_array(); return $row['id']; } else return false;
+        
+        $stmt = $this->mysqli->prepare("SELECT id FROM feeds WHERE userid=? AND name=? AND tag=?");
+        $stmt->bind_param("iss",$userid,$name,$tag);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $result = $stmt->fetch();
+        $stmt->close();
+        
+        if ($result && $id>0) return $id; else return false;
     }
 
     // Update feed size and return total
@@ -398,7 +423,7 @@ class Feed
         $id = (int) $id;
         if (!$this->exist($id)) return array('success'=>false, 'message'=>'Feed does not exist');
 
-        if ($field!=NULL) // if the feed exists
+        if ($field!=null) // if the feed exists
         {
             $field = preg_replace('/[^\w\s-]/','',$field);
          
@@ -409,9 +434,9 @@ class Feed
             else if ($this->redis) {
                 $val = $this->redis->hget("feed:$id",$field);
             } else {
-                $result = $this->mysqli->query("SELECT `$field` FROM feeds WHERE `id` = '$id'");
+                $result = $this->mysqli->query("SELECT * FROM feeds WHERE `id` = '$id'");
                 $row = $result->fetch_array();
-                $val = $row[0];
+                if (isset($row[$field])) $val = $row[$field];
             }
             return $val;
         }
@@ -579,7 +604,7 @@ class Feed
         return $this->EngineClass($engine)->get_average_DMY($feedid,$start,$end,$mode,$timezone);
     }
 
-    public function csv_export($feedid,$start,$end,$outinterval,$datetimeformat,$name)
+    public function csv_export($feedid,$start,$end,$outinterval,$datetimeformat)
     {
         $feedid = (int) $feedid;
         if ($end<=$start) return array('success'=>false, 'message'=>"Request end time before start time");
@@ -604,7 +629,7 @@ class Feed
     }
 
     // Prepare export multi data
-    public function csv_export_multi_prepare($feedids,$start,$end,$outinterval)
+    private function csv_export_multi_prepare($feedids,$start,$end,$outinterval)
     {
         if ($end<=$start) return array('success'=>false, 'message'=>"Request end time before start time");
         $exportdata = array();
@@ -640,8 +665,17 @@ class Feed
     // Generate export multi file
     public function csv_export_multi($feedids,$start,$end,$outinterval,$datetimeformat,$name)
     {
-        global $csv_decimal_places, $csv_decimal_place_separator, $csv_field_separator;
+        // Ensure all feedids given are integers
         $feedids = (array) (explode(",",$feedids));
+        for ($i=0; $i<count($feedids); $i++) {
+            $feedid = (int) $feedids[$i];
+            $feedids[$i] = $feedid;
+        }
+        // Basic name input sanitisation
+        $name = preg_replace('/[^\w\s-]/','',$name);
+        
+        global $csv_decimal_places, $csv_decimal_place_separator, $csv_field_separator;
+        
         $exportdata = $this->csv_export_multi_prepare($feedids,$start,$end,$outinterval);
         if (isset($exportdata['success']) && !$exportdata['success']) return $exportdata;
 
@@ -712,23 +746,41 @@ class Feed
         $id = (int) $id;
         if (!$this->exist($id)) return array('success'=>false, 'message'=>'Feed does not exist');
         $fields = json_decode(stripslashes($fields));
-        $array = array();
+        
+        $success = false;
 
-        // Repeat this line changing the field name to add fields that can be updated:
-        if (isset($fields->name)) $array[] = "`name` = '".preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$fields->name)."'";
-        if (isset($fields->tag)) $array[] = "`tag` = '".preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$fields->tag)."'";
-        if (isset($fields->public)) $array[] = "`public` = '".intval($fields->public)."'";
+        if (isset($fields->name)) {
+            if (preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$fields->name)!=$fields->name) return array('success'=>false, 'message'=>'invalid characters in feed name');
+            $stmt = $this->mysqli->prepare("UPDATE feeds SET name = ? WHERE id = ?");
+            $stmt->bind_param("si",$fields->name,$id);
+            if ($stmt->execute()) $success = true;
+            $stmt->close();
+            
+            if ($this->redis) $this->redis->hset("feed:$id",'name',$fields->name);
+        }
+        
+        if (isset($fields->tag)) {
+            if (preg_replace('/[^\p{N}\p{L}_\s-:]/u','',$fields->tag)!=$fields->tag) return array('success'=>false, 'message'=>'invalid characters in feed tag');
+            $stmt = $this->mysqli->prepare("UPDATE feeds SET tag = ? WHERE id = ?");
+            $stmt->bind_param("si",$fields->tag,$id);
+            if ($stmt->execute()) $success = true;
+            $stmt->close();
+            
+            if ($this->redis) $this->redis->hset("feed:$id",'tag',$fields->tag);
+        }
 
-        // Convert to a comma separated string for the mysql query
-        $fieldstr = implode(",",$array);
-        $this->mysqli->query("UPDATE feeds SET ".$fieldstr." WHERE `id` = '$id'");
+        if (isset($fields->public)) {
+            $public = (int) $fields->public;
+            if ($public>0) $public = 1;
+            $stmt = $this->mysqli->prepare("UPDATE feeds SET public = ? WHERE id = ?");
+            $stmt->bind_param("ii",$public,$id);
+            if ($stmt->execute()) $success = true;
+            $stmt->close();
+            
+            if ($this->redis) $this->redis->hset("feed:$id",'public',$public);
+        }
 
-        // Update redis
-        if ($this->redis && isset($fields->name)) $this->redis->hset("feed:$id",'name',$fields->name);
-        if ($this->redis && isset($fields->tag)) $this->redis->hset("feed:$id",'tag',$fields->tag);
-        if ($this->redis && isset($fields->public)) $this->redis->hset("feed:$id",'public',$fields->public);
-
-        if ($this->mysqli->affected_rows>0){
+        if ($success){
             return array('success'=>true, 'message'=>'Field updated');
         } else {
             return array('success'=>false, 'message'=>'Field could not be updated');
@@ -890,47 +942,91 @@ class Feed
         }
     }
 
-    // USES: redis feed
     public function set_processlist($userid, $id, $processlist, $process_list)
-    {
+    {    
         $userid = (int) $userid;
         
         // Validate processlist
         $pairs = explode(",",$processlist);
+        $pairs_out = array();
         
         foreach ($pairs as $pair)
         {
             $inputprocess = explode(":", $pair);
             if (count($inputprocess)==2) {
-                $processid = (int) $inputprocess[0];
-                $arg = (int) $inputprocess[1];
+            
+                // Verify process id
+                $processid = $inputprocess[0];
+                if (!isset($process_list[$processid])) return array('success'=>false, 'message'=>_("Invalid process"));
+                
+                // Verify argument
+                $arg = $inputprocess[1];
+                
+                // Check argument against process arg type
+                switch($process_list[$processid][1]){
+                
+                    case ProcessArg::FEEDID:
+                        $feedid = (int) $arg;
+                        if (!$this->access($userid,$feedid)) {
+                            return array('success'=>false, 'message'=>_("Invalid feed"));
+                        }
+                        break;
+                        
+                    case ProcessArg::INPUTID:
+                        $inputid = (int) $arg;
+                        if (!$this->input_access($userid,$inputid)) {
+                            return array('success'=>false, 'message'=>_("Invalid input"));
+                        }
+                        break;
 
-                // Check that feed exists and user has ownership
-                if (isset($process_list[$processid]) && $process_list[$processid][1]==ProcessArg::FEEDID) {
-                    if (!$this->access($userid,$arg)) {
-                        return array('success'=>false, 'message'=>_("Invalid feed"));
-                    }
-                }
+                    case ProcessArg::VALUE:
+                        if (!is_numeric($arg)) {
+                            return array('success'=>false, 'message'=>'Value is not numeric'); 
+                        }
+                        break;
 
-                // Check that input exists and user has ownership
-                if (isset($process_list[$processid]) && $process_list[$processid][1]==ProcessArg::INPUTID) {
-                    $inputid = (int) $arg;
-                    $result = $this->mysqli->query("SELECT id FROM input WHERE `userid` = '$userid' AND `id` = '$arg'");
-                    if ($result->num_rows != 1) return array('success'=>false, 'message'=>_("Invalid input"));
+                    case ProcessArg::TEXT:
+                        if (preg_replace('/[^\p{N}\p{L}_\s.-]/u','',$arg)!=$arg) 
+                            return array('success'=>false, 'message'=>'Invalid characters in arg'); 
+                        break;
+                                                
+                    case ProcessArg::SCHEDULEID:
+                        $scheduleid = (int) $arg;
+                        if (!$this->schedule_access($userid,$scheduleid)) { // This should really be in the schedule model
+                            return array('success'=>false, 'message'=>'Invalid schedule'); 
+                        }
+                        break;
+                        
+                    case ProcessArg::NONE:
+                        $arg = false;
+                        break;
+                        
+                    default:
+                        $arg = false;
+                        break;
                 }
+                
+                $pairs_out[] = implode(":",array($processid,$arg));
             }
         }
+        
+        // rebuild processlist from verified content
+        $processlist_out = implode(",",$pairs_out);
     
-        $this->mysqli->query("UPDATE feeds SET processList = '$processlist' WHERE id='$id'");
+        $stmt = $this->mysqli->prepare("UPDATE feeds SET processList=? WHERE id=?");
+        $stmt->bind_param("si", $processlist_out, $id);
+        if (!$stmt->execute()) {
+            return array('success'=>false, 'message'=>_("Error setting processlist"));
+        }
+        
         if ($this->mysqli->affected_rows>0){
-            // CHECK REDIS
-            if ($this->redis) $this->redis->hset("feed:$id",'processList',$processlist);
+            if ($this->redis) $this->redis->hset("feed:$id",'processList',$processlist_out);
             return array('success'=>true, 'message'=>'Feed processlist updated');
         } else {
             return array('success'=>false, 'message'=>'Feed processlist was not updated');
         }
     }
-
+    
     public function reset_processlist($id)
     {
         $id = (int) $id;
@@ -1001,8 +1097,9 @@ class Feed
         return $engine;
     }
     
-    public function get_user_timezone($userid) 
+    private function get_user_timezone($userid) 
     {
+        $userid = (int) $userid;
         $result = $this->mysqli->query("SELECT timezone FROM users WHERE id = '$userid';");
         $row = $result->fetch_object();
 
@@ -1015,5 +1112,259 @@ class Feed
         }
         return $timezone;
     }
-}
+    
 
+     // Check and and fix data
+    public function check_data($feedid, $start, $end, $max_value, $min_value, $missing_data) {
+        $engine = $this->get_engine($feedid);
+        if (method_exists($this->EngineClass($engine), "check_data")) {
+            return $this->EngineClass($engine)->check_data($feedid, $start, $end, $max_value, $min_value, $missing_data);
+        }
+        else { // it is recommended to add this method to each engine to optimize the process, but a default one is provided here
+            return $this->check_data_default($feedid, $start, $end, $max_value, $min_value, $missing_data);
+        }
+    }
+
+    public function fix_data($feedid, $start, $end, $max_value, $min_value, $missing_data) {
+        $engine = $this->get_engine($feedid);
+        if (method_exists($this->EngineClass($engine), "fix_data")) {
+            return $this->EngineClass($engine)->fix_data($feedid, $start, $end, $max_value, $min_value, $missing_data);
+        }
+        else { // it is recommended to add this method to each engine to optimize the process, but a default one is provided here
+            return $this->fix_data_default($feedid, $start, $end, $max_value, $min_value, $missing_data);
+        }
+    }
+
+    private function check_data_default($feedid, $start, $end, $max_value, $min_value, $missing_data) {
+        // Initial values
+        $check_missing_data = $missing_data === "true" ? true : false;
+        $check_max_value = false;
+        $check_min_value = false;
+
+        $start = (int) $start / 1000;
+        $end = (int) $end / 1000;
+        $feedid = (int) $feedid;
+
+        if ($max_value) {
+            $max_value = (float) $max_value;
+            $check_max_value = true;
+        }
+        if ($min_value) {
+            $min_value = (float) $min_value;
+            $check_min_value = true;
+        }
+
+        $datapoints_checked = 0;
+        $datapoints_missing = 0;
+        $datapoints_greater = 0;
+        $datapoints_lower = 0;
+
+        // Engine object
+        $engine = $this->get_engine($feedid);
+        $engine_obj = $this->EngineClass($engine);
+
+        // Get feed meta data
+        $meta = $engine_obj->get_meta($feedid);
+
+        // Get feed data
+        $dataset = $engine_obj->get_data($feedid, $start * 1000, $end * 1000, $meta->interval, 0, true);
+        if (isset($dataset['success']) && $dataset['success'] == false)
+            return $dataset['message'];
+
+        // Are we checking too many datapoints?
+        $npoints_to_check = count($dataset);
+        if (isset($feed_max_npoints_data_check)) {
+            if ($npoints_to_check > $feed_max_npoints_data_check)
+                return array('success' => false, 'message' => "Datapoints to check = $npoints_to_check, Maximum = $feed_max_npoints_data_check");
+        }else {
+            if ($npoints_to_check > 1051200) // equivalent to a whole year with a 30s interval
+                return array('success' => false, 'message' => "Datapoints to check = $npoints_to_check, Maximum = 1051200 ( equivalent to a whole year with a 30s interval). Change start or end dates");
+        }
+
+        // Check datapoints
+        foreach ($dataset as $data_point) {
+            if (is_nan($data_point[1]) || is_null($data_point[1])) {
+                $datapoints_missing++;
+            }
+            else {
+                $value = (float) $data_point[1];
+                if ($check_max_value === true && $value > $max_value)
+                    $datapoints_greater++;
+                if ($check_min_value === true && $value < $min_value)
+                    $datapoints_lower++;
+            }
+            $datapoints_checked++;
+        }
+
+        // Prepare output
+        $data['data_points_checked'] = $datapoints_checked;
+        if ($check_missing_data)
+            $data['data_points_missing'] = $datapoints_missing;
+        if ($check_max_value)
+            $data['datapoints_greater'] = $datapoints_greater;
+        if ($check_min_value)
+            $data['datapoints_lower'] = $datapoints_lower;
+
+        return $data;
+    }
+
+    private function fix_data_default($feedid, $start, $end, $max_value, $min_value, $missing_data) {
+        // Initial values
+        $fix_missing_data = $missing_data === "true" ? true : false;
+        $fix_max_value = false;
+        $fix_min_value = false;
+
+        $start = (int) $start / 1000;
+        $end = (int) $end / 1000;
+        $feedid = (int) $feedid;
+
+        if ($max_value != null) {
+            $max_value = (float) $max_value;
+            $fix_max_value = true;
+        }
+        if ($min_value != null) {
+            $min_value = (float) $min_value;
+            $fix_min_value = true;
+        }
+
+        $datapoints_checked = 0;
+        $datapoints_missing_fixed = 0;
+        $datapoints_greater = 0;
+        $datapoints_lower = 0;
+
+        // Engine object
+        $engine = $this->get_engine($feedid);
+        $engine_obj = $this->EngineClass($engine);
+
+        // Get feed meta data
+        $meta = $engine_obj->get_meta($feedid);
+
+        // Is end time higher than last update time?
+        $last_value = $engine_obj->lastvalue($feedid);
+        if ($end > $last_value['time']) {
+            $end = $last_value['time'];
+        }
+
+        // Get feed data
+        $dataset = $engine_obj->get_data($feedid, $start * 1000, $end * 1000, $meta->interval, 0, true);
+        if (isset($dataset['success']) && $dataset['success'] == false)
+            return $dataset['message'];
+
+        // If we are fixing missing data points we need to ensure that it is possible to interpolate
+        if ($fix_missing_data === true) {
+            if (is_nan($dataset[0][1]) || is_null($dataset[0][1])) {
+                return array('success' => false, 'message' => "The first data point in the period requested is missing, interpolation not possible. Please change the start date");
+            }
+            $last_index = count($dataset) - 1;
+            if (is_nan($dataset[$last_index][1]) || is_null($dataset[$last_index][1])) {
+                return array('success' => false, 'message' => "The last data point in the period requested is missing, interpolation not possible. Please change the end date");
+            }
+        }
+
+        // Are we checking too many datapoints?
+        $npoints_to_check = count($dataset);
+        if (isset($feed_max_npoints_data_check)) {
+            if ($npoints_to_check > $feed_max_npoints_data_check)
+                return array('success' => false, 'message' => "Datapoints to check = $npoints_to_check, Maximum = $feed_max_npoints_data_check");
+        }else {
+            if ($npoints_to_check > 1051200) // equivalent to a whole year with a 30s interval
+                return array('success' => false, 'message' => "Datapoints to check = $npoints_to_check, Maximum = 1051200 ( equivalent to a whole year with a 30s interval). Change start or end dates");
+        }
+
+        // Check datapoints
+        $interpolation_required = false;
+        foreach ($dataset as $data_point) {
+            if (is_nan($data_point[1]) || is_null($data_point[1])) {
+                $interpolation_required = true;
+            }
+            else {
+                $time = (int) $data_point[0];
+                $value = (float) $data_point[1];
+                if ($fix_max_value === true && $value > $max_value) {
+                    $fixed = $engine_obj->update($feedid, $time / 1000, $max_value);
+                    $datapoints_greater++;
+                }
+                if ($fix_min_value === true && $value < $min_value) {
+                    $a = $engine_obj->update($feedid, $time / 1000, $min_value);
+                    $datapoints_lower++;
+                }
+                // Are we interpolating?
+                if ($fix_missing_data === true) {
+                    if ($interpolation_required === false) {
+                        $last_known_value = array($time, $value);
+                    }
+                    else { // We only go into this "else" after we have found one or more missing data points ($interpolation_required === true) and the current data point is not missing
+                        $current_value = array($time, $value);
+                        $interpolated_datapoints += $this->linear_interpolation($last_known_value, $current_value);
+                        foreach ($interpolated_datapoints as $data_point_fixing) {
+                            $engine_obj->update($feedid, $data_point_fixing[0] / 1000, $data_point_fixing[1]);
+                            $datapoints_missing_fixed++;
+                        }
+                        $interpolation_required = false;
+                        $last_known_value = $current_value;
+                    }
+                }
+            }
+            $datapoints_checked++;
+        }
+
+        // Prepare output
+        $data['data_points_checked'] = $datapoints_checked;
+        if ($fix_missing_data === true)
+            $data['data_points_missing_fixed'] = $datapoints_missing_fixed;
+        if ($fix_max_value)
+            $data['datapoints_greater_fixed'] = $datapoints_greater;
+        if ($fix_min_value)
+            $data['datapoints_lower_fixed'] = $datapoints_lower;
+
+        return $data;
+        // http://localhost/groups_module/feed/fixdata.json?id=155&missing_data=true&min_value=600&start=1511970130000&end=1511978520000
+    }
+
+    private function linear_interpolation($last_known_value, $current_value) {
+        $xa = $last_known_value[0]; // position
+        $ya = $last_known_value[1]; // value
+
+        $xb = $current_value[0];
+        $yb = $current_value[1];
+
+        $datapoints_fixed = array();
+
+        for ($x = $xa + 1; $x < $xb; $x++) {
+            $y = $ya + ($yb - $ya) * ($x - $xa) / ($xb - $xa);
+            fseek($fh, 4 * $x);
+            fwrite($fh, pack("f", $y));
+            $datapoints_fixed[] = array($x, $y);
+        }
+
+        return $datapoints_fixed;
+    }
+
+    // ------------------------------------------
+    
+    private function input_access($userid,$inputid)
+    {
+        $userid = (int) $userid;
+        $inputid = (int) $inputid;
+        $stmt = $this->mysqli->prepare("SELECT id FROM input WHERE userid=? AND id=?");
+        $stmt->bind_param("ii",$userid,$inputid);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $result = $stmt->fetch();
+        $stmt->close();
+        if ($result && $id>0) return true; else return false;
+    }
+    
+    private function schedule_access($userid,$scheduleid)
+    {
+        $userid = (int) $userid;
+        $scheduleid = (int) $scheduleid;
+        $stmt = $this->mysqli->prepare("SELECT id FROM schedule WHERE userid=? AND id=?");
+        $stmt->bind_param("ii",$userid,$scheduleid);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $result = $stmt->fetch();
+        $stmt->close();
+        if ($result && $id>0) return true; else return false;
+    }
+}
