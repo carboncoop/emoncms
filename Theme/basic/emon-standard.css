@@ -106,7 +106,7 @@ input[type=text][class=variable-name-edit] {
 
 .scrollable-menu {
   height: auto;
-  max-height: 250px;
+  max-height: 290px;
   overflow-y: auto;
 }
 
@@ -118,4 +118,9 @@ input[type=text][class=variable-name-edit] {
     	url(ajax-loader.gif)
     	center
     	no-repeat;
+}
+
+div.update-message{
+    margin-top:25px;
+    width:400px
 }
