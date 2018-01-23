@@ -29,11 +29,13 @@ class Update {
     public $emoncms;
     public $modules;
     public $themes;
+    private $log;
 
     public function __construct() {
         $this->emoncms = $this->ini('emoncms');
         $this->modules = $this->ini('modules');
         $this->themes = $this->ini('themes');
+        $this->log = new EmonLogger(__FILE__);
     }
 
     private function ini($type) {
@@ -115,6 +117,7 @@ class Update {
             exec('git pull 2>&1', $out);
             chdir('../..');
         }
+        $this->log->warn("Updated: $source -- $item");
         return $out;
     }
 
