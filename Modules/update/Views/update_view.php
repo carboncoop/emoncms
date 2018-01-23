@@ -45,31 +45,31 @@ global $session, $path;
     var available_updates = JSON.parse('<?php echo json_encode($available_updates) ?>');
     if (Object.keys(available_updates).length > 0) {
         if (available_updates.emoncms.length == 0 && available_updates.modules.length == 0 && available_updates.themes.length == 0)
-            $('#page').html('<p><?php echo _('Everything up to date')?></p>');
-        else{
+            $('#page').html('<p><?php echo _('Everything up to date') ?></p>');
+        else {
             // EmonCMS
             if (available_updates.emoncms.length > 0) {
                 var out = available_update_to_tr('emoncms', 0);
                 $('table.emoncms').append(out);
                 $('.emoncms').show();
             }
-        // Modules 
-        if (available_updates.modules.length > 0) {
-            for (var mod in available_updates.modules) {
-                var out = available_update_to_tr('modules', mod);
-                $('table.modules').append(out);
+            // Modules 
+            if (available_updates.modules.length > 0) {
+                for (var mod in available_updates.modules) {
+                    var out = available_update_to_tr('modules', mod);
+                    $('table.modules').append(out);
+                }
+                $('.modules').show();
             }
-            $('.modules').show();
-        }
-        // Themes 
-        if (available_updates.themes.length > 0) {
-            for (var theme in available_updates.themes) {
-                var out = available_update_to_tr('themes', theme);
-                $('table.modules').append(out);
+            // Themes 
+            if (available_updates.themes.length > 0) {
+                for (var theme in available_updates.themes) {
+                    var out = available_update_to_tr('themes', theme);
+                    $('table.modules').append(out);
+                }
+                $('.themes').show();
             }
-            $('.themes').show();
         }
-    }
     }
 
 
@@ -100,10 +100,10 @@ global $session, $path;
 
         if (available_updates[type][index].has_update_permissions === false)
             out += '<td>' + available_updates[type][index].permissions_message + '</td>';
-        if (type == 'emoncms' && available_updates[type][index].default_settings_changed === true)
+        else if (type == 'emoncms' && available_updates[type][index].default_settings_changed === true)
             out += '<td><?php echo _('The default_settings.php file has been modified. EmonCMS update needs to be done manually in order to keep your current settings. ') ?><a href="https://github.com/emoncms/emoncms/blob/master/docs/RaspberryPi/general.md" ><?php echo _('See how to') ?> </a></td>';
         else {
-            out += '<td id="' + type + '-' + name + '-td" style="position:relative"><div id="' + type + '-' + name + '-loader" class="ajax-loader" style="display:none;width:105px;margin-left:0px"></div><button class="update_now" source="modules" item="' + name + '" ><?php echo _('Update now') ?></button>';
+            out += '<td id="' + type + '-' + name + '-td" style="position:relative"><div id="' + type + '-' + name + '-loader" class="ajax-loader" style="display:none;width:105px;margin-left:0px"></div><button class="update_now" source="' + type + '" item="' + name + '" ><?php echo _('Update now') ?></button>';
             if (type == 'modules' && available_updates[type][index].db_update_required === true)
                 out += '<br/><?php echo _('The schema of this module has changed. Remember to update database after finishing upudating the module') ?>';
 
