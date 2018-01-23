@@ -38,13 +38,16 @@ class Update {
 
     private function ini($type) {
         if ($type == 'emoncms') {
-            $temp = ['name' => 'emoncms', 'git' => file_exists("/.git")];
+            $temp = ['name' => 'emoncms', 'git' => file_exists(".git")];
             $temp['update_available'] = $this->update_available('emoncms', $temp);
             if ($temp['update_available'] === true) {
                 if ($this->file_changed('default.settings.php', 'emoncms') || $this->file_changed('default.emonpi.settings.php', 'emoncms'))
                     $temp['default_settings_changed'] = true;
                 else
                     $temp['default_settings_changed'] = false;
+                $temp['has_update_permissions'] = $this->has_update_permissions('emoncms', $temp);
+                        if ($temp['has_update_permissions'] === false)
+                            $temp['permissions_message'] = $this->permissions_message('emoncms', $temp);
             }
             return $temp;
         }
