@@ -11,3 +11,5 @@ The aim of the module is to provide a user interface for administrators to updat
 - emonCMS will check if there are updates available everytime a page is loaded and show a message if there are updates available. The user only needs to close the message once per session
 - It's very likely that the user will have permissions problems when updating an item. When installing via git on the command line the user is probably different than the one used by Apache. In this case a message is shown to the user with instructions about how to change the owner of the files
 
+
+
