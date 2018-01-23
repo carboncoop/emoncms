@@ -244,7 +244,7 @@ function admin_controller() {
                     $data[] = $row;
                 $result = $data;
             }
-            else if ($route->action == 'setuser' && $session['write']) {
+            else if ($route->action == 'setuserdata' && $session['write']) {
                 $id = (int) get('id');
                 $fields = get('fields');
                 $fields = json_decode(stripslashes(get('fields')));

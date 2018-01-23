@@ -22,7 +22,7 @@ global $path;
         'set': function (id, fields_to_update)
         {
             var result = {};
-            $.ajax({url: path + "admin/setuser.json?id=" + id + "&fields=" + JSON.stringify(fields_to_update), dataType: 'json', async: false,success: function (data) {
+            $.ajax({url: path + "admin/setuserdata.json?id=" + id + "&fields=" + JSON.stringify(fields_to_update), dataType: 'json', async: false,success: function (data) {
                     console.log(data);
                     table.data = admin.userlist();
                     table.draw()
