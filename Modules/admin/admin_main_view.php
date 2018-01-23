@@ -189,6 +189,15 @@ table tr td.subinfo { border-color:transparent;}
             <a href="<?php echo $path; ?>admin/db" class="btn btn-info"><?php echo _('Update & check'); ?></a>
         </td>
     </tr>
+    <tr>
+        <td>
+            <h3><?php echo _('System updates'); ?></h3>
+            <p><?php echo _('Check if there are updates available for emonCMS or any of the modules and themes installed.'); ?></p>
+        </td>
+        <td class="buttons"><br>
+            <a href="<?php echo $path; ?>update/list" class="btn btn-info"><?php echo _('Check'); ?></a>
+        </td>
+    </tr>
 <?php
 if ($log_enabled) {
 ?>
