@@ -42,7 +42,7 @@ function update_controller() {
                 $result = $update->update_available(get('source'), $item);
             }
             else if ($route->action == 'closeupdatemessage')
-                $_SESSION['update_message_closed'] = true;
+                $_SESSION['dont_check_updates'] = true;
         }
     }
 

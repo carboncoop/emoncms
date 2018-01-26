@@ -254,13 +254,15 @@ $output['session'] = $session;
 
 // 7) Check for updates
 $output['updates_content'] = '';
-if ($session['admin'] == 1 && $route->format == 'html' && isset($_SESSION['update_message_closed']) === false && $route->controller != 'update') {
+if ($session['admin'] == 1 && $route->format == 'html' && isset($_SESSION['dont_check_updates']) === false && $route->controller != 'update') {
     require "Modules/update/update_model.php";
     $update = new Update();
     $updates_available = $update->check_updates();
     if (count($updates_available['emoncms']) > 0 || count($updates_available['modules']) > 0 || count($updates_available['themes']) > 0) {
         $output['updates_content'] = $update->get_warning_html();
     }
+    else
+        $_SESSION['dont_check_updates'] = true;
 }
 
 // 8) Output
