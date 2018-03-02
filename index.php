@@ -108,29 +108,32 @@ else if (isset($_SERVER["HTTP_AUTHORIZATION"])) {
     $apikey = str_replace('Bearer ', '', $_SERVER["HTTP_AUTHORIZATION"]);
 }
 
-$device = false;
-if ($apikey) {
-    $session = $user->apikey_session($apikey);
-    if (empty($session)) {
-        header($_SERVER["SERVER_PROTOCOL"] . " 401 Unauthorized");
-        header('WWW-Authenticate: Bearer realm="API KEY", error="invalid_apikey", error_description="Invalid API key"');
-        print "Invalid API key";
-        $log->error("Invalid API key '" . $apikey . "'");
-        exit();
-    }
-}
-else if ($devicekey && (@include "Modules/device/device_model.php")) {
-    $device = new Device($mysqli, $redis);
-    $session = $device->devicekey_session($devicekey);
-    if (empty($session)) {
-        header($_SERVER["SERVER_PROTOCOL"] . " 401 Unauthorized");
-        header('WWW-Authenticate: Bearer realm="Device KEY", error="invalid_devicekey", error_description="Invalid device key"');
-        print "Invalid device key";
-        $log->error("Invalid device key '" . $devicekey . "'");
-        exit();
-    }
-}
-else {
+    // 3) User sessions
+    require("Modules/user/user_model.php");
+    $user = new User($mysqli,$redis);
+
+    $apikey = false;
+    $devicekey = false;
+    if (isset($_GET['apikey'])) {
+        $apikey = $_GET['apikey'];
+    } else if (isset($_POST['apikey'])) {
+        $apikey = $_POST['apikey'];
+    } else if (isset($_GET['devicekey'])) {
+        $devicekey = $_GET['devicekey'];
+    } else if (isset($_POST['devicekey'])) {
+        $devicekey = $_POST['devicekey'];
+    } else if (isset($_SERVER["HTTP_AUTHORIZATION"])) {
+        // Support passing apikey on Authorization header per rfc6750, like example:
+        //      GET /resource HTTP/1.1
+        //      Host: server.example.com
+        //      Authorization: Bearer THE_API_KEY_HERE
+        
+        if (isset($_SERVER["CONTENT_TYPE"]) && $_SERVER["CONTENT_TYPE"]=="aes128cbc") {
+            // If content_type is AES128CBC
+        } else {
+            $apikey = str_replace('Bearer ', '', $_SERVER["HTTP_AUTHORIZATION"]);
+        }
+    }else {
     $session = $user->emon_session_start();
 }
 
