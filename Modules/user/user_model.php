@@ -224,8 +224,9 @@ class User
         }
         $stmt->bind_param("ssssss", $username, $password, $email, $salt, $apikey_read, $apikey_write);
         if (!$stmt->execute()) {
+            $error = $stmt->error;
             $stmt->close();
-            return array('success'=>false, 'message'=>_("Error creating user - " . $stmt->error));
+            return array('success'=>false, 'message'=>_("Error creating user - " . $error));
         }
 
         // Make the first user an admin
