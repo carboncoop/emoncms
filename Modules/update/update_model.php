@@ -48,8 +48,8 @@ class Update {
                 else
                     $temp['default_settings_changed'] = false;
                 $temp['has_update_permissions'] = $this->has_update_permissions('emoncms', $temp);
-                        if ($temp['has_update_permissions'] === false)
-                            $temp['permissions_message'] = $this->permissions_message('emoncms', $temp);
+                if ($temp['has_update_permissions'] === false)
+                    $temp['permissions_message'] = $this->permissions_message('emoncms', $temp);
             }
             return $temp;
         }
@@ -136,6 +136,7 @@ class Update {
             chdir($this->get_dir($type, $item));
 
             exec("git status 2>&1", $module_status);
+            $this->log->info("$type:$item" . $module_status[1]);
             if (strpos($module_status[1], 'branch is behind') != false) {
                 $result = true;
                 //$result['status'] = str_replace(["'", '"'], "", implode(" -- ", $module_status));
