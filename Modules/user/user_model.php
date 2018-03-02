@@ -222,7 +222,7 @@ class User
         $stmt->bind_param("ssssss", $username, $password, $email, $salt, $apikey_read, $apikey_write);
         if (!$stmt->execute()) {
             $stmt->close();
-            return array('success'=>false, 'message'=>_("Error creating user"));
+            return array('success'=>false, 'message'=>_("Error creating user - " . $this->mysqli->error));
         }
 
         // Make the first user an admin
