@@ -18,7 +18,6 @@ Modules/*/
 !Modules/process/
 !Modules/schedule/
 !Modules/time/
-!Modules/update/
 !Modules/user/
 !Modules/vis/
 
