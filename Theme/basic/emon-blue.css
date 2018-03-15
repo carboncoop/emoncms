@@ -142,8 +142,3 @@ input[type=text][class=variable-name-edit] {
 .caret {
    border-top-color: #fff !important;
 }
-
-div.update-message{
-    margin-top:25px;
-    width:400px
-}
