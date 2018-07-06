@@ -213,20 +213,13 @@ class Process_ProcessList
         return $value;
     }
     
-<<<<<<< HEAD
-    public function max_value_allowed($arg, $time, $value)
-=======
+
      public function max_value_allowed($arg, $time, $value)
->>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
     {
         if ($value>$arg) $value = $arg;
         return $value;
     }
-<<<<<<< HEAD
-
-=======
     
->>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
     public function min_value_allowed($arg, $time, $value)
     {
         if ($value<$arg) $value = $arg;
