@@ -28,7 +28,7 @@ class Process_ProcessList
 
     private $log;
     private $mqtt = false;
-
+    
     // Module required constructor, receives parent as reference
     public function __construct(&$parent)
     {
@@ -44,12 +44,25 @@ class Process_ProcessList
 
         // Load MQTT if enabled
         // Publish value to MQTT topic, see: http://openenergymonitor.org/emon/node/5943
-        global $mqtt_enabled, $mqtt_server, $mqtt;
-        if ($mqtt_enabled == true && $mqtt == false)
+        global $mqtt_enabled, $mqtt_server, $log;
+        
+        if ($mqtt_enabled && !$this->mqtt)
         {
-            require("Lib/phpMQTT.php");
-            $mqtt = new phpMQTT($mqtt_server['host'], $mqtt_server['port'], "Emoncms Publisher");
-            $this->mqtt = $mqtt;
+            // @see: https://github.com/emoncms/emoncms/blob/master/docs/RaspberryPi/MQTT.md
+            if (class_exists("Mosquitto\Client")) {
+                /*
+                    new Mosquitto\Client($id,$cleanSession)
+                    $id (string) – The client ID. If omitted or null, one will be generated at random.
+                    $cleanSession (boolean) – Set to true to instruct the broker to clean all messages and subscriptions on disconnect. Must be true if the $id parameter is null.
+                 */ 
+                $mqtt_client = new Mosquitto\Client(null, true);
+                
+                $mqtt_client->onDisconnect(function($responseCode) use ($log) {
+                    if ($responseCode > 0) $log->info('unexpected disconnect from mqtt server');
+                });
+
+                $this->mqtt = $mqtt_client;
+            }
         }
     }
     
@@ -61,7 +74,6 @@ class Process_ProcessList
         $list[] = array(dgettext("process_messages","EXIT"), ProcessArg::NONE, "error_found", 0, DataType::UNDEFINED, "Hidden", 'desc'=>"".dgettext("process_messages",'<p>This was automaticaly added when a loop error was discovered on the processList or execution took too many steps to process.  Review the usage of GOTOs or decrease the number of items and delete this entry to resume execution.</p>'), 'internalerror'=>true,'internalerror_reason'=>"HAS ERRORS",'internalerror_desc'=>'Processlist disabled due to errors found during execution.');
         $list[] = array(dgettext("process_messages","Max value allowed"), ProcessArg::VALUE, "max_value_allowed", 0, DataType::UNDEFINED, "Limits", 'desc'=>"".dgettext("process_messages","<p>If value is greater than <i>max value allowed</i> then the value passed to following process will be the <i>max value allowed</i></p>"),'requireredis'=>false,'nochange'=>false);
         $list[] = array(dgettext("process_messages","Min value allowed"), ProcessArg::VALUE, "min_value_allowed", 0, DataType::UNDEFINED, "Limits", 'desc'=>"".dgettext("process_messages","<p>If value is lower than <i>min value allowed</i> then the value passed to following process will be the <i>min value allowed</i></p>"),'requireredis'=>false,'nochange'=>false);
-        
         return $list;
     }
 
@@ -201,11 +213,20 @@ class Process_ProcessList
         return $value;
     }
     
+<<<<<<< HEAD
     public function max_value_allowed($arg, $time, $value)
+=======
+     public function max_value_allowed($arg, $time, $value)
+>>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
     {
         if ($value>$arg) $value = $arg;
         return $value;
     }
+<<<<<<< HEAD
+
+=======
+    
+>>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
     public function min_value_allowed($arg, $time, $value)
     {
         if ($value<$arg) $value = $arg;
@@ -587,8 +608,10 @@ class Process_ProcessList
             $kwhinc = $value - $lastvalue['value'];
             $joules = $kwhinc * 3600000.0;
             $timeelapsed = ($time - $lastvalue['time']);
-            $power = $joules / $timeelapsed;
-            $this->feed->insert_data($feedid, $time, $time, $power);
+            if ($timeelapsed>0) {     //This only avoids a crash, it's not ideal to return "power = 0" to the next process.
+                $power = $joules / $timeelapsed;
+                $this->feed->insert_data($feedid, $time, $time, $power);
+            } // should have else { log error message }
         }
         $redis->hMset("process:kwhtopower:$feedid", array('time' => $time, 'value' => $value));
 
@@ -699,13 +722,13 @@ class Process_ProcessList
     
     public function publish_to_mqtt($topic, $time, $value)
     {
-        global $mqtt_server;
-        // Publish value to MQTT topic, see: http://openenergymonitor.org/emon/node/5943
-        if ($this->mqtt && $this->mqtt->connect(true,NULL,$mqtt_server['user'],$mqtt_server['password'])) {
-            $this->mqtt->publish($topic,$value,0);
-            $this->mqtt->close();
+        global $redis;
+        // saves value to redis
+        // phpmqtt_input.php is then used to publish the values
+        if ($this->mqtt){
+            $data = array('topic'=>$topic,'value'=>$value,'timestamp'=>$time);
+            $redis->rpush('mqtt-pub-queue', json_encode($data));
         }
-        
         return $value;
     }
     

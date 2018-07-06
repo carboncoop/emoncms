@@ -20,8 +20,25 @@ function admin_controller() {
     // Allow for special admin session if updatelogin property is set to true in settings.php
     // Its important to use this with care and set updatelogin to false or remove from settings
     // after the update is complete.
-    if ($updatelogin || $session['admin']) {
 
+    if ($updatelogin===true) {
+        $route->format = 'html';
+        if ($route->action == 'db')
+        {
+            $applychanges = false;
+            if (isset($_GET['apply']) && $_GET['apply']==true) $applychanges = true;
+
+            require_once "Lib/dbschemasetup.php";
+            $updates = array(array(
+                'title'=>"Database schema", 'description'=>"",
+                'operations'=>db_schema_setup($mysqli,load_db_schema(),$applychanges)
+            ));
+
+            return array('content'=>view("Modules/admin/update_view.php", array('applychanges'=>$applychanges, 'updates'=>$updates)));
+        }
+    }
+    
+    if ($session['admin']) {
         if ($route->format == 'html') {
             if ($route->action == 'view')
                 $result = view("Modules/admin/admin_main_view.php", array());
@@ -42,7 +59,8 @@ function admin_controller() {
                     'operations' => db_schema_setup($mysqli, load_db_schema(), $applychanges)
                 );
 
-                $result = view("Modules/admin/update_view.php", array('applychanges' => $applychanges, 'updates' => $updates));
+                $error = !empty($updates[0]['operations']['error']) ? $updates[0]['operations']['error']: '';
+                $result = view("Modules/admin/update_view.php", array('applychanges'=>$applychanges, 'updates'=>$updates, 'error'=>$error));
             }
 
             else if ($route->action == 'users' && $session['write']) {
@@ -87,22 +105,22 @@ function admin_controller() {
                         $beginning = false;
                         $text = array();
                         while ($linecounter > 0) {
-                            $t = " ";
-                            while ($t != "\n") {
-                                if (fseek($handle, $pos, SEEK_END) == -1) {
-                                    $beginning = true;
-                                    break;
-                                }
-                                $t = fgetc($handle);
-                                $pos --;
+
+                          $t = " ";
+                          while ($t != "\n") {
+                            if(!empty($handle) && fseek($handle, $pos, SEEK_END) == -1) {
+                            $beginning = true;
+                            break;
                             }
-                            $linecounter --;
-                            if ($beginning) {
-                                rewind($handle);
-                            }
-                            $text[$lines - $linecounter - 1] = fgets($handle);
-                            if ($beginning)
-                                break;
+                          if(!empty($handle)) $t = fgetc($handle);
+                          $pos --;
+                          }
+                        $linecounter --;
+                        if ($beginning) {
+                          rewind($handle);
+                          }
+                        $text[$lines-$linecounter-1] = fgets($handle);
+                        if ($beginning) break;
                         }
                         fclose($handle);
                         return array_reverse($text);
@@ -139,15 +157,10 @@ function admin_controller() {
                     if (isset($_POST['argument'])) {
                         $argument = $_POST['argument'];
                     }
-                    $fh = @fopen($update_flag, "w");
-                    if (!$fh) {
-                        $result = "ERROR: Can't write the flag $update_flag.";
-                    }
-                    else {
-                        fwrite($fh, "$update_script $argument>$update_logfile");
-                        $result = "Update flag set";
-                    }
-                    @fclose($fh);
+
+                    
+                    $redis->rpush("service-runner","$update_script $argument>$update_logfile");
+                    $result = "service-runner trigger sent";
                 }
 
                 if ($route->subaction == 'getupdatelog' && $session['admin']) {
@@ -177,11 +190,11 @@ function admin_controller() {
 
                 if ($route->subaction == 'backup' && $session['write'] && $session['admin']) {
                     $route->format = "text";
-                    $fh = @fopen($backup_flag, "w");
-                    if (!$fh)
-                        $result = "ERROR: Can't write the flag $backup_flag.";
-                    else
-                        $result = "Update flag file $backup_flag created. Update will start on next cron call in " . (60 - (time() % 60)) . "s...";
+
+                    
+                    $fh = @fopen($backup_flag,"w");
+                    if (!$fh) $result = "ERROR: Can't write the flag $backup_flag.";
+                    else $result = "Update flag file $backup_flag created. Update will start on next cron call in " . (60 - (time() % 60)) . "s...";
                     @fclose($fh);
                 }
 

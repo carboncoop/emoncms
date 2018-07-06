@@ -17,14 +17,19 @@ class User
     private $mysqli;
     private $rememberme;
     private $enable_rememberme = false;
+    private $email_verification = false;
     private $redis;
     private $log;
+    
+    public $appname;
 
     public function __construct($mysqli,$redis)
     {
         //copy the settings value, otherwise the enable_rememberme will always be false.
-        global $enable_rememberme;
+        global $enable_rememberme, $email_verification, $appname;
         $this->enable_rememberme = $enable_rememberme;
+        $this->email_verification = $email_verification;
+        $this->appname = $appname;
 
         $this->mysqli = $mysqli;
 
@@ -192,6 +197,7 @@ class User
         if (isset($_SESSION['startingpage'])) $session['startingpage'] = $_SESSION['startingpage']; else $session['startingpage'] = '';
         if (isset($_SESSION['username'])) $session['username'] = $_SESSION['username']; else $session['username'] = 'REMEMBER_ME';
         if (isset($_SESSION['cookielogin'])) $session['cookielogin'] = $_SESSION['cookielogin']; else $session['cookielogin'] = 0;
+        if (isset($_SESSION['emailverified'])) $session['emailverified'] = $_SESSION['emailverified'];
 
         return $session;
     }
@@ -218,23 +224,108 @@ class User
         $apikey_write = md5(uniqid(mt_rand(), true));
         $apikey_read = md5(uniqid(mt_rand(), true));
 
-        $stmt = $this->mysqli->prepare("INSERT INTO users ( username, password, email, salt ,apikey_read, apikey_write, admin ) VALUES (?,?,?,?,?,?,0)");
-        if($stmt === false){
-            return array('success'=>false, 'message'=>_("Error creating user - " . $this->mysqli->error));
-        }
+        $stmt = $this->mysqli->prepare("INSERT INTO users ( username, password, email, salt ,apikey_read, apikey_write, admin) VALUES (?,?,?,?,?,?,0)");
         $stmt->bind_param("ssssss", $username, $password, $email, $salt, $apikey_read, $apikey_write);
         if (!$stmt->execute()) {
-            $error = $stmt->error;
+            $error = $this->mysqli->error;
             $stmt->close();
-            return array('success'=>false, 'message'=>_("Error creating user - " . $error));
+            return array('success'=>false, 'message'=>_("Error creating user, mysql error: ".$error));
         }
 
         // Make the first user an admin
         $userid = $this->mysqli->insert_id;
         if ($userid == 1) $this->mysqli->query("UPDATE users SET admin = 1 WHERE id = '1'");
-
         $stmt->close();
-        return array('success'=>true, 'userid'=>$userid, 'apikey_read'=>$apikey_read, 'apikey_write'=>$apikey_write);
+        
+        // Email verification
+        if ($this->email_verification) {
+            $result = $this->send_verification_email($username);
+            if ($result['success']) return array('success'=>true, 'verifyemail'=>true, 'message'=>"Email verification email sent, please check your inbox");
+        } else {
+            return array('success'=>true, 'verifyemail'=>false, 'userid'=>$userid, 'apikey_read'=>$apikey_read, 'apikey_write'=>$apikey_write);
+        }        
+    }
+    
+    public function send_verification_email($username)
+    {
+        // check for valid username format
+        if (preg_replace('/[^\p{N}\p{L}_\s-]/u','',$username)!=$username) return array('success'=>false, 'message'=>_("Invalid username"));
+
+        // check that username exists and load email and verification status
+        if (!$stmt = $this->mysqli->prepare("SELECT id,email,email_verified FROM users WHERE username=?")) {
+            return array('success'=>false, 'message'=>_("Database error, you may need to run database update"));
+        }
+        $stmt->bind_param("s",$username);
+        $stmt->execute();
+        
+        $stmt->bind_result($id,$email,$email_verified);
+        $result = $stmt->fetch();
+        $stmt->close();
+        
+        // exit if user does not exist
+        if (!$result || $id<1) return array('success'=>false, 'message'=>_("Username does not exist"));
+        // exit if account is already verified
+        if ($email_verified) return array('success'=>false, 'message'=>_("Email already verified"));
+        
+        // Create new verification key
+        $verification_key = md5(uniqid(mt_rand(), true));
+        // Save new verification key
+        $stmt = $this->mysqli->prepare("UPDATE users SET verification_key=? WHERE id=?");
+        $stmt->bind_param("si",$verification_key,$id);
+        $stmt->execute();
+        $stmt->close();
+        
+        // Send verification email
+        global $path;
+        $verification_link = $path."user/verify?email=$email&key=$verification_key";
+        
+        // $this->redis->rpush("emailqueue",json_encode(array(
+        //    "emailto"=>$email,
+        //    "type"=>"passwordrecovery",
+        //    "subject"=>'Emoncms email verification',
+        //    "message"=>"<p>To complete emoncms registration please verify your email by following this link: <a href='$verification_link'>$verification_link</a></p>"
+        // )));
+        
+        require "Lib/email.php";
+        $emailer = new Email();
+        $emailer->to(array($email));
+        $emailer->subject(ucfirst($this->appname).' email verification');
+        $emailer->body("<p>To complete ".$this->appname." registration please verify your email by following this link: <a href='$verification_link'>$verification_link</a></p>");
+        $result = $emailer->send();
+        if (!$result['success']) {
+            $this->log->error("Email send returned error. emailto=" + $email . " message='" . $result['message'] . "'");
+        } else {
+            $this->log->info("Email sent to $email");
+        }
+        
+        return array('success'=>true, 'message'=>_("Email verification email sent, please check your inbox"));
+    }
+    
+    public function verify_email($email,$verification_key)
+    {
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return array('success'=>false, 'message'=>_("Email address format error"));
+        if (strlen($verification_key)!=32) return array('success'=>false, 'message'=>_("Invalid verification key"));
+        
+        $stmt = $this->mysqli->prepare("SELECT id,email_verified FROM users WHERE email=? AND verification_key=?");
+        $stmt->bind_param("ss",$email,$verification_key);
+        $stmt->execute();
+        $stmt->bind_result($id,$email_verified);
+        $result = $stmt->fetch();
+        $stmt->close();
+        
+        if ($result && $id>0) {
+            if ($email_verified==0) {
+                $stmt = $this->mysqli->prepare("UPDATE users SET email_verified='1' WHERE id=?");
+                $stmt->bind_param("i",$id);
+                $stmt->execute();
+                $stmt->close();
+                return array('success'=>true, 'message'=>"Email verified");
+            } else {
+                return array('success'=>false, 'message'=>"Email already verified");
+            }
+        }
+        
+        return array('success'=>false, 'message'=>"Invalid email or verification key");
     }
 
     public function login($username, $password, $remembermecheck)
@@ -251,21 +342,22 @@ class User
 
         // 28/04/17: Changed explicitly stated fields to load all with * in order to access startingpage
         // without cuasing an error if it has not yet been created in the database.
-        if (!$stmt = $this->mysqli->prepare("SELECT id,password,salt,apikey_write,admin,language,startingpage FROM users WHERE username=?")) {
+        if (!$stmt = $this->mysqli->prepare("SELECT id,password,salt,apikey_write,admin,language,startingpage,email_verified FROM users WHERE username=?")) {
             return array('success'=>false, 'message'=>_("Database error, you may need to run database update"));
         }
         $stmt->bind_param("s",$username);
         $stmt->execute();
         
-        $stmt->bind_result($userData_id,$userData_password,$userData_salt,$userData_apikey_write,$userData_admin,$userData_language,$userData_startingpage);
+        $stmt->bind_result($userData_id,$userData_password,$userData_salt,$userData_apikey_write,$userData_admin,$userData_language,$userData_startingpage,$email_verified);
         $result = $stmt->fetch();
         $stmt->close();
         
         //$result = $stmt->get_result();
         //$userData = $result->fetch_object();
         //$stmt->close();
-
+        
         if (!$result) return array('success'=>false, 'message'=>_("Username does not exist"));
+        if ($this->email_verification && !$email_verified) return array('success'=>false, 'message'=>_("Please verify email address"));
         
         $hash = hash('sha256', $userData_salt . hash('sha256', $password));
 
@@ -282,7 +374,7 @@ class User
             $_SESSION['write'] = 1;
             $_SESSION['admin'] = $userData_admin;
             $_SESSION['lang'] = $userData_language;
-            if (isset($userData_startingpage)) $_SESSION['startingpage'] = $userData_startingpage;
+            $_SESSION['startingpage'] = $userData_startingpage;
                             
             if ($this->enable_rememberme) {
                 if ($remembermecheck==true) {
@@ -295,7 +387,7 @@ class User
                 }
             }
 
-            return array('success'=>true, 'message'=>_("Login successful"));
+            return array('success'=>true, 'message'=>_("Login successful"), 'startingpage'=>$userData_startingpage);
         }
     }
 
@@ -385,41 +477,37 @@ class User
         
         if ($userid!==false && $userid>0)
         {
-            // Generate new random password
-            $newpass = hash('sha256',md5(uniqid(rand(), true)));
-            $newpass = substr($newpass, 0, 10);
-
-            // Hash and salt
-            $hash = hash('sha256', $newpass);
-            $salt = md5(uniqid(rand(), true));
-            $password = hash('sha256', $salt . $hash);
-
-            // Save password and salt
-            $stmt = $this->mysqli->prepare("UPDATE users SET password = ?, salt = ? WHERE id = ?");
-            $stmt->bind_param("ssi", $password, $salt, $userid);
-            $stmt->execute();
-            $stmt->close();
-            //------------------------------------------------------------------------------
             global $enable_password_reset;
             if ($enable_password_reset==true)
             {
+                // Generate new random password
+                $newpass = hash('sha256',md5(uniqid(rand(), true)));
+                $newpass = substr($newpass, 0, 10);
+
+                // Hash and salt
+                $hash = hash('sha256', $newpass);
+                $salt = md5(uniqid(rand(), true));
+                $password = hash('sha256', $salt . $hash);
+                
+                // Sent email with $newpass to $email
                 require "Lib/email.php";
                 $email = new Email();
-                //$email->from(from);
                 $email->to($emailto);
-                $email->subject('Emoncms password reset');
-                $email->body("<p>A password reset was requested for your emoncms account.</p><p>You can now login with password: $newpass </p>");
+                $email->subject(ucfirst($this->appname).' password reset');
+                $email->body("<p>A password reset was requested for your ".$this->appname." account.</p><p>You can now login with password: $newpass </p>");
                 $result = $email->send();
                 if (!$result['success']) {
-                    $this->log->error("Email send returned error. emailto=" + $emailto . " message='" . $result['message'] . "'");
+                    $this->log->error("Email send returned error. emailto=" . $emailto . " message='" . $result['message'] . "'");
                 } else {
                     $this->log->info("Email sent to $emailto");
-                }
+                    // Save password and salt
+                    $stmt = $this->mysqli->prepare("UPDATE users SET password = ?, salt = ? WHERE id = ?");
+                    $stmt->bind_param("ssi", $password, $salt, $userid);
+                    $stmt->execute();
+                    $stmt->close();
+                    return array('success'=>true, 'message'=>"Password recovery email sent!");
+                }                
             }
-            //------------------------------------------------------------------------------
-
-            // Sent email with $newpass to $email
-            return array('success'=>true, 'message'=>"Password recovery email sent!");
         }
 
         return array('success'=>false, 'message'=>"An error occured");
@@ -478,9 +566,9 @@ class User
     public function get_name($userid)
     {
         $userid = (int) $userid;
-        $result = $this->mysqli->query("SELECT name FROM users WHERE id = '$userid';");
+        $result = $this->mysqli->query("SELECT username FROM users WHERE id = '$userid';");
         $row = $result->fetch_array();
-        return $row['name'];
+        return $row['username'];
     }
 
     public function get_email($userid)
@@ -530,9 +618,12 @@ class User
     {
         $userid = (int) $userid;
         if (!$userid) return false;
-        $result = $this->mysqli->query("SELECT timezone FROM users WHERE id = '$userid';");
-        $row = $result->fetch_object();
-        return $row->timezone;
+        if ($result = $this->mysqli->query("SELECT timezone FROM users WHERE id = '$userid';")) {
+            if ($row = $result->fetch_object()) {
+                return $row->timezone;
+            }
+        }
+        return false;
     }
 
     // List supported PHP timezones
@@ -676,6 +767,22 @@ class User
         $result = $this->mysqli->query("SELECT COUNT(*) FROM users");
         $row = $result->fetch_row();
         return $row[0];
+    }
+    
+    public function get_usernames_by_email($email) {
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return false;
+        $stmt = $this->mysqli->prepare("SELECT id,username FROM users WHERE email = ?");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();        
+        $stmt->bind_result($id,$username);
+        
+        $users = array();
+        while ($stmt->fetch()) {
+            $users[] = array("id"=>$id,"username"=>$username);
+        }
+        $stmt->close();
+        
+        return $users;
     }
 }
 
