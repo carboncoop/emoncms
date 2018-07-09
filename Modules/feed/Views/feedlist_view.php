@@ -97,14 +97,8 @@ global $path, $feedviewpath;
             <tr>
                 <td>
                 <p><b><?php echo _('Interval');?></b></p>
-<<<<<<< HEAD
-                    <select id="export-interval" >
-                    <option value=1><?php echo _('Auto');?></option>
-=======
-                <select id="export-interval" >
                     <option value="10"><?php echo _('Auto');?></option>
                     <option value=1><?php echo _('1s');?></option>
->>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
                     <option value=5><?php echo _('5s');?></option>
                     <option value=10><?php echo _('10s');?></option>
                     <option value=15><?php echo _('15s');?></option>
@@ -508,16 +502,7 @@ global $path, $feedviewpath;
         }
     });
 
-<<<<<<< HEAD
-        // Actions
-        'edit-action': {'title': '', 'type': "edit"},
-        'delete-action': {'title': '', 'type': "delete"},
-        'view-action': {'title': '', 'type': "iconlink", 'link': path + feedviewpath},
-        'processlist-action': {'title': '', 'type': "iconconfig", 'icon': 'icon-wrench'},
-        'checkdata-action': {'title': '', 'type': "iconbasic", 'icon': 'icon-check'},
-        'export-action': {'title': '', 'type': "iconbasic", 'icon': 'icon-download'}
-    }
-=======
+
     'unit':{'title':"<?php echo _('Unit'); ?>", 'type':"selectWithOther", 'options': {
       "":"",
       W:"W",
@@ -541,7 +526,6 @@ global $path, $feedviewpath;
     'processlist-action':{'title':'', 'type':"iconconfig", 'icon':'icon-wrench'},
     'export-action':{'title':'', 'type':"iconbasic", 'icon':'icon-download'}
   }
->>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
 
   $("#table").on('click', '.icon-wrench', function() {
         var i = table.data[$(this).attr('row')];
@@ -774,13 +758,3 @@ global $path, $feedviewpath;
     });
 
 </script>
-
-
-<<<<<<< HEAD
-
-    // Process list UI js
-    processlist_ui.init(1); // is virtual feed
-=======
-  // Process list UI js
-  processlist_ui.init(1); // is virtual feed
->>>>>>> c0f036dde1a7794ecb3e82a1cf2eaa6d84eeabc5
